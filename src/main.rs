@@ -41,31 +41,19 @@ fn calculate_points((other, strategy): (Hand, Strategy)) -> u32 {
         (Lose, Rock) | (Draw, Scissor) | (Win, Paper) => Scissor,
     };
 
-    let mut total = match strategy {
-        Lose => 0,
-        Draw => 3,
-        Win => 6,
-    };
-
-    total += match me {
-        Rock => 1,
-        Paper => 2,
-        Scissor => 3,
-    };
-
-    total
+    me as u32 + strategy as u32
 }
 
 #[derive(Debug, Copy, Clone)]
 enum Strategy {
-    Lose,
-    Draw,
-    Win,
+    Lose = 0,
+    Draw = 3,
+    Win = 6,
 }
 
 #[derive(Debug, Copy, Clone)]
 enum Hand {
-    Rock,
-    Paper,
-    Scissor,
+    Rock = 1,
+    Paper = 2,
+    Scissor = 3,
 }
