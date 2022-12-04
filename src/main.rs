@@ -11,14 +11,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         .lines()
         .map(|line| -> u32 {
             let Some((first, second)) = line.split_once(',') else {
-                panic!("Couldn't parse line.")
+                panic!("Couldn't split  line.")
             };
             let Some((min1, max1)) = first.split_once('-') else {
-                panic!("Couldn't first elf.")
+                panic!("Couldn't split first elf.")
             };
             let Some((min2, max2)) = second.split_once('-') else {
-                panic!("Couldn't second elf.")
+                panic!("Couldn't split second elf.")
             };
+            let (min1, max1): (u32, u32) = (min1.parse().unwrap(), max1.parse().unwrap());
+            let (min2, max2): (u32, u32) = (min2.parse().unwrap(), max2.parse().unwrap());
             if (min1 <= min2 && max2 <= max1) || (min2 <= min1 && max1 <= max2) {
                 1
             } else {
