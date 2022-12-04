@@ -5,20 +5,28 @@ use itertools::Itertools;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
+
     let input = read();
     let total: u32 = input
         .lines()
-        .tuples()
-        .map(|(elf1, elf2, elf3)| -> u32 {
-            type Set = HashSet::<char>;
-            let elf1 = Set::from_iter(elf1.chars());
-            let elf2 = Set::from_iter(elf2.chars());
-            let elf3 = Set::from_iter(elf3.chars());
-            let common = elf1.intersection(&elf2).copied().collect::<Set>();
-            let common = common.intersection(&elf3).next().expect("Couldn't find common letter.");
-            calculate_value(*common)
+        .map(|line| -> u32 {
+            let Some((first, second)) = line.split_once(',') else {
+                panic!("Couldn't parse line.")
+            };
+            let Some((min1, max1)) = first.split_once('-') else {
+                panic!("Couldn't first elf.")
+            };
+            let Some((min2, max2)) = second.split_once('-') else {
+                panic!("Couldn't second elf.")
+            };
+            if (min1 <= min2 && max2 <= max1) || (min2 <= min1 && max1 <= max2) {
+                1
+            } else {
+                0
+            }
         })
         .sum();
+    
     let runtime = start.elapsed();
     dbg!(total);
     dbg!(runtime);
