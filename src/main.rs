@@ -7,7 +7,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let input = read();
     let (mut stacks, instructions) = parse_input(&input);
-
+    let duration_parse = start.elapsed();
+    dbg!(duration_parse);
+    
     for Instruction { n, from, to } in instructions {
         let get = stacks.get_mut(from).unwrap();
         let len = get.len();
@@ -80,8 +82,9 @@ fn parse_input(input: &str) -> (Vec<Vec<char>>, Vec<Instruction>) {
         for cap in re.captures_iter(line) {
             let outer = &cap[0];
             if outer.starts_with('[') {
-                let stack = stacks.get_mut(stack_number).unwrap();
-                stack.push(*(&cap[1].chars().last().unwrap()));
+                let inner = *(&cap[1].chars().next().unwrap());
+                let stack = &mut stacks[stack_number];
+                stack.push(inner);
                 stack_number += 1;
             } else if outer.starts_with(' ') {
                 let num_spaces = outer.len();
