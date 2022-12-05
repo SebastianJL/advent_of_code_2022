@@ -1,38 +1,119 @@
 use std::{error::Error, time::Instant};
 
-use itertools::Itertools;
+use regex::Regex;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let total: u32 = input
-        .lines()
-        .map(|line| -> u32 {
-            // Split string.
-            let Some((min1, max1, min2, max2)) = line.split([',', '-']).next_tuple() else {
-                panic!("Couldn't split string");
-            };
+    let (mut stacks, instructions) = parse_input(&input);
 
-            // Parse numbers.
-            let (min1, max1): (u32, u32) = (min1.parse().unwrap(), max1.parse().unwrap());
-            let (min2, max2): (u32, u32) = (min2.parse().unwrap(), max2.parse().unwrap());
+    for Instruction { n, from, to } in instructions {
+        let get = stacks.get_mut(from).unwrap();
+        let len = get.len();
+        let split = get.split_off(len - n);
+        let insert = stacks.get_mut(to).unwrap();
+        insert.extend(split);
+    }
 
-            // Test overlap.
-            if (min1 <= max2) && (min2 <= max1) {
-                1
-            } else {
-                0
-            }
-        })
-        .sum();
+    let mut answer = String::new();
+    for stack in stacks {
+        answer.push(*stack.last().unwrap());
+    }
+    dbg!(answer);
 
     let runtime = start.elapsed();
-    dbg!(total);
     dbg!(runtime);
     Ok(())
 }
 
 fn read() -> String {
     std::fs::read_to_string(format!("./data/input.txt")).expect("File not found.")
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Instruction {
+    n: usize,
+    from: usize,
+    to: usize,
+}
+
+impl From<&str> for Instruction {
+    fn from(input: &str) -> Self {
+        let re = Regex::new(r"move (\d{1,}) from (\d{1,}) to (\d{1,})").unwrap();
+        let cap = re.captures(input).unwrap();
+        let (n, mut from, mut to): (usize, usize, usize) = (
+            cap[1].parse().unwrap(),
+            cap[2].parse().unwrap(),
+            cap[3].parse().unwrap(),
+        );
+
+        // Adjust 1-based input to 0-based indexing.
+        from -= 1;
+        to -= 1;
+        Instruction { n, from, to }
+    }
+}
+fn parse_input(input: &str) -> (Vec<Vec<char>>, Vec<Instruction>) {
+    let (stacks_str, instructions_str) = input.split_once("\n\n").unwrap();
+
+    // Parse stacks.
+    let re = Regex::new(r"\[([A-Z])\]| {3,}").unwrap();
+    let mut stack_lines = stacks_str.lines().rev();
+    let n_stacks: u32 = stack_lines
+        .next()
+        .unwrap()
+        .split("   ")
+        .last()
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+
+    let mut stacks: Vec<Vec<char>> = vec![];
+    for _ in 0..n_stacks {
+        stacks.push(vec![]);
+    }
+
+    for line in stack_lines {
+        let mut stack_number = 0;
+        for cap in re.captures_iter(line) {
+            let outer = &cap[0];
+            if outer.starts_with('[') {
+                let stack = stacks.get_mut(stack_number).unwrap();
+                stack.push(*(&cap[1].chars().last().unwrap()));
+                stack_number += 1;
+            } else if outer.starts_with(' ') {
+                let num_spaces = outer.len();
+                let num_advance = if num_spaces % 2 == 1 {
+                    (num_spaces - 1) / 4
+                } else {
+                    (num_spaces - 1) / 4 + 1
+                };
+                stack_number += num_advance;
+            }
+        }
+    }
+
+    // Parse instructions.
+    let mut instructions = vec![];
+    for line in instructions_str.lines() {
+        instructions.push(Instruction::from(line));
+    }
+
+    (stacks, instructions)
+}
+
+#[test]
+fn move_from() {
+    let input = "move 1 from 2 to 1";
+    let instruction = Instruction::from(input);
+    assert_eq!(
+        instruction,
+        Instruction {
+            n: 1,
+            from: 2,
+            to: 1
+        }
+    );
 }
