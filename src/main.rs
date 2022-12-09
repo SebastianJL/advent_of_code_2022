@@ -12,59 +12,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut visited = HashSet::new();
     visited.insert(positions[N - 1]);
     for Instruction { steps, direction } in instructions {
-        match direction {
-            Right => {
-                for _ in 0..steps {
-                    positions[0].x += 1;
-                    for i in 1..N {
-                        let (head, tail) = (positions[i - 1], positions[i]);
-                        let tail = follow_head(head, tail);
-                        positions[i] = tail;
-                    }
-                    visited.insert(positions[N - 1]);
-                    // println!("{positions:?}");
-                }
+        for _ in 0..steps {
+            // Move head.
+            match direction {
+                Right => positions[0].x += 1,
+                Left => positions[0].x -= 1,
+                Up => positions[0].y += 1,
+                Down => positions[0].y -= 1,
+            };
+            // Follow with tail.
+            for i in 1..N {
+                let (head, tail) = (positions[i - 1], positions[i]);
+                let tail = follow_head(head, tail);
+                positions[i] = tail;
             }
-            Left => {
-                for _ in 0..steps {
-                    positions[0].x -= 1;
-                    for i in 1..N {
-                        let (head, tail) = (positions[i - 1], positions[i]);
-                        let tail = follow_head(head, tail);
-                        positions[i] = tail;
-                    }
-                    visited.insert(positions[N - 1]);
-                    // println!("{positions:?}");
-                }
-            }
-            Up => {
-                for _ in 0..steps {
-                    positions[0].y += 1;
-                    for i in 1..N {
-                        let (head, tail) = (positions[i - 1], positions[i]);
-                        let tail = follow_head(head, tail);
-                        positions[i] = tail;
-                    }
-                    visited.insert(positions[N - 1]);
-                    // println!("{positions:?}");
-                }
-            }
-            Down => {
-                for _ in 0..steps {
-                    positions[0].y -= 1;
-                    for i in 1..N {
-                        let (head, tail) = (positions[i - 1], positions[i]);
-                        let tail = follow_head(head, tail);
-                        positions[i] = tail;
-                    }
-                    visited.insert(positions[N - 1]);
-                    // println!("{positions:?}");
-                }
-            }
+            // Insert tail.
+            visited.insert(positions[N - 1]);
         }
-        // print_pos(&positions);
+        print_pos(&positions);
     }
 
+    print_visited(&visited);
     dbg!(visited.len());
 
     let runtime = start.elapsed();
@@ -81,23 +49,44 @@ fn parse(input: &str) -> Vec<Instruction> {
 }
 
 fn print_pos(positions: &[Position]) {
-    let xmin: i32 = positions.iter().map(|pos| pos.x).min().unwrap();
-    let xmax: i32 = positions.iter().map(|pos| pos.x).max().unwrap();
-    let ymin: i32 = positions.iter().map(|pos| pos.y).min().unwrap();
-    let ymax: i32 = positions.iter().map(|pos| pos.y).max().unwrap();
-
-    for row in (xmin..=xmax).rev() {
-        for col in ymin..=ymax {
+    let xmin: i32 = positions.iter().map(|pos| pos.x).min().unwrap().min(0);
+    let xmax: i32 = positions.iter().map(|pos| pos.x).max().unwrap().max(0);
+    let ymin: i32 = positions.iter().map(|pos| pos.y).min().unwrap().min(0);
+    let ymax: i32 = positions.iter().map(|pos| pos.y).max().unwrap().max(0);
+    for row in (ymin..=ymax).rev() {
+        for col in xmin..=xmax {
             if let Some(index) = positions
                 .iter()
-                .position(|&p| p == Position { x: row, y: col })
+                .position(|&p| p == Position { x: col, y: row })
             {
                 print!("{}", index);
+            } else if (row, col) == (0, 0) {
+                print!("s");
             } else {
                 print!(".");
             }
-            print!("\n");
         }
+        print!("\n");
+    }
+    print!("\n");
+}
+
+fn print_visited(visited: &HashSet<Position>) {
+    let xmin: i32 = visited.iter().map(|pos| pos.x).min().unwrap().min(0);
+    let xmax: i32 = visited.iter().map(|pos| pos.x).max().unwrap().max(0);
+    let ymin: i32 = visited.iter().map(|pos| pos.y).min().unwrap().min(0);
+    let ymax: i32 = visited.iter().map(|pos| pos.y).max().unwrap().max(0);
+    for row in (ymin..=ymax).rev() {
+        for col in xmin..=xmax {
+            if visited.contains(&Position { x: col, y: row }) {
+                print!("#");
+            } else if (row, col) == (0, 0) {
+                print!("s");
+            } else {
+                print!(".");
+            }
+        }
+        print!("\n");
     }
     print!("\n");
 }
