@@ -1,48 +1,82 @@
-use std::{
-    error::Error,
-    fmt::Display,
-    ops::{Index, IndexMut},
-    time::Instant,
-};
+use std::{error::Error, str::FromStr, time::Instant, collections::HashSet};
 
-use take_until::TakeUntilExt;
+use Direction::*;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let data = parse(&input);
+    let instructions = parse(&input);
+    let (mut head, mut tail) = (Position { x: 0, y: 0 }, Position { x: 0, y: 0 });
 
-    let n_rows = input.lines().count();
-    let size = data.len();
-    let n_cols = size / n_rows;
-    assert_eq!(n_cols * n_rows, size, "Size is not divisible by n_rows.");
-
-    let grid = Array2::new(data, n_rows, n_cols);
-    let mut scores = Array2::<usize>::like(&grid);
-    for row in 1..(n_rows - 1) {
-        for col in 1..(n_cols - 1) {
-            let height = grid[[row, col]];
-            let see_left = (0..col)
-                .rev()
-                .take_until(|&j| height <= grid[[row, j]])
-                .count();
-            let see_right = (col+1..n_cols)
-                .take_until(|&j| height <= grid[[row, j]])
-                .count();
-            let see_up = (0..row)
-                .rev()
-                .take_until(|&i| height <= grid[[i, col]])
-                .count();
-            let see_down = (row+1..n_rows)
-                .take_until(|&i| height <= grid[[i, col]])
-                .count();
-            scores[[row, col]] += see_left*see_right*see_up*see_down;
+    let mut visited = HashSet::new();
+    visited.insert(tail);
+    for Instruction{steps, direction} in instructions {
+        match direction {
+            Right => {
+                for _ in 0..steps {
+                    let (dx, dy) = (tail.x - head.x, tail.y - head.y);
+                    match (dx, dy) {
+                        (-1, _) => {
+                            (tail.x, tail.y) = (head.x, head.y);
+                            visited.insert(tail);
+                            head.x += 1
+                        }
+                        (dx, dy) if dx.abs() <= 1 && dy.abs() <= 1 => head.x += 1,
+                        (dx, dy) => panic!("(dx, dy) was {:?}. Should be at most 1.", (dx, dy)),
+                    }
+                    // println!("T: {:?}, H: {:?}", tail, head);
+                }
+            }
+            Left => {
+                for _ in 0..steps {
+                    let (dx, dy) = (tail.x - head.x, tail.y - head.y);
+                    match (dx, dy) {
+                        (1, _) => {
+                            (tail.x, tail.y) = (head.x, head.y);
+                            visited.insert(tail);
+                            head.x -= 1
+                        }
+                        (dx, dy) if dx.abs() <= 1 && dy.abs() <= 1 => head.x -= 1,
+                        (dx, dy) => panic!("(dx, dy) was {:?}. Should be at most 1.", (dx, dy)),
+                    }
+                    // println!("T: {:?}, H: {:?}", tail, head);
+                }
+            },
+            Up => {
+                for _ in 0..steps {
+                    let (dx, dy) = (tail.x - head.x, tail.y - head.y);
+                    match (dx, dy) {
+                        (_, -1) => {
+                            (tail.x, tail.y) = (head.x, head.y);
+                            visited.insert(tail);
+                            head.y += 1
+                        }
+                        (dx, dy) if dx.abs() <= 1 && dy.abs() <= 1 => head.y += 1,
+                        (dx, dy) => panic!("(dx, dy) was {:?}. Should be at most 1.", (dx, dy)),
+                    }
+                    // println!("T: {:?}, H: {:?}", tail, head);
+                }
+            },
+            Down => {
+                for _ in 0..steps {
+                    let (dx, dy) = (tail.x - head.x, tail.y - head.y);
+                    match (dx, dy) {
+                        (_, 1) => {
+                            (tail.x, tail.y) = (head.x, head.y);
+                            visited.insert(tail);
+                            head.y -= 1
+                        }
+                        (dx, dy) if dx.abs() <= 1 && dy.abs() <= 1 => head.y -= 1,
+                        (dx, dy) => panic!("(dx, dy) was {:?}. Should be at most 1.", (dx, dy)),
+                    }
+                    // println!("T: {:?}, H: {:?}", tail, head);
+                }
+            },
         }
     }
 
-
-    println!("{}", scores.data.iter().max().unwrap());
+    dbg!(visited.len());
 
     let runtime = start.elapsed();
     dbg!(runtime);
@@ -53,68 +87,43 @@ fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn parse(input: &str) -> Vec<usize> {
-    input
-        .lines()
-        .map(|line| {
-            line.chars()
-                .map(|c| c.to_digit(10).unwrap() as usize)
-                .collect::<Vec<usize>>()
-        })
-        .flatten()
-        .collect()
+fn parse(input: &str) -> Vec<Instruction> {
+    input.lines().map(|line| line.parse().unwrap()).collect()
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+struct Position {
+    x: i32,
+    y: i32,
 }
 
 #[derive(Debug)]
-struct Array2<T: Copy> {
-    n_rows: usize,
-    n_cols: usize,
-    data: Vec<T>,
+enum Direction {
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
-impl<T: Copy + Default> Array2<T> {
-    fn new(data: Vec<T>, n_rows: usize, n_cols: usize) -> Self {
-        assert_eq!(n_rows * n_cols, data.len());
-        Array2 {
-            data,
-            n_rows,
-            n_cols,
-        }
-    }
-
-    fn like<U: Copy + Default>(similar: &Array2<U>) -> Array2<T> {
-        let size = similar.n_rows * similar.n_cols;
-        let data: Vec<T> = vec![Default::default(); size];
-
-        Array2 {
-            data,
-            n_rows: similar.n_rows,
-            n_cols: similar.n_cols,
-        }
-    }
+#[derive(Debug)]
+struct Instruction {
+    steps: usize,
+    direction: Direction,
 }
 
-impl<T: Copy> Index<[usize; 2]> for Array2<T> {
-    type Output = T;
+impl FromStr for Instruction {
+    type Err = String;
 
-    fn index(&self, [i, j]: [usize; 2]) -> &Self::Output {
-        &self.data[i * self.n_cols + j]
-    }
-}
-
-impl<T: Copy> IndexMut<[usize; 2]> for Array2<T> {
-    fn index_mut(&mut self, [i, j]: [usize; 2]) -> &mut Self::Output {
-        &mut self.data[i * self.n_cols + j]
-    }
-}
-
-impl<T: Copy + std::fmt::Debug> Display for Array2<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for row in 0..self.n_rows {
-            let start = row * self.n_cols;
-            let end = start + self.n_cols;
-            writeln!(f, "{:?}", &self.data[start..end])?;
-        }
-        Ok(())
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (direction, steps) = s.split_once(' ').ok_or("Couldn't split.")?;
+        let steps = steps.parse().or(Err("Couldn't parse distance."))?;
+        let direction = match direction {
+            "L" => Left,
+            "R" => Right,
+            "U" => Up,
+            "D" => Down,
+            _ => Err("Invalid direction.")?,
+        };
+        Ok(Instruction { steps, direction })
     }
 }
