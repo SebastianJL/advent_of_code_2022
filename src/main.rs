@@ -3,10 +3,9 @@ use std::{
     fmt::Display,
     ops::{Index, IndexMut},
     time::Instant,
-    vec,
 };
 
-use itertools::izip;
+use take_until::TakeUntilExt;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
@@ -20,100 +19,47 @@ fn main() -> Result<(), Box<dyn Error>> {
     assert_eq!(n_cols * n_rows, size, "Size is not divisible by n_rows.");
 
     let grid = Array2::new(data, n_rows, n_cols);
+    let mut scores = Array2::<usize>::like(&grid);
+    for row in 1..(n_rows - 1) {
+        for col in 1..(n_cols - 1) {
+            let height = grid[[row, col]];
+            let see_left = (0..col)
+                .rev()
+                .take_until(|&j| height <= grid[[row, j]])
+                .count();
+            let see_right = (col+1..n_cols)
+                .take_until(|&j| height <= grid[[row, j]])
+                .count();
+            let see_up = (0..row)
+                .rev()
+                .take_until(|&i| height <= grid[[i, col]])
+                .count();
+            let see_down = (row+1..n_rows)
+                .take_until(|&i| height <= grid[[i, col]])
+                .count();
+            scores[[row, col]] += see_left*see_right*see_up*see_down;
+        }
+    }
 
-    let sees_left = look_left(&grid);
-    let sees_right = look_right(&grid);
-    let sees_up = look_up(&grid);
-    let sees_down = look_down(&grid);
-    println!("{sees_left}");
-    println!("{sees_right}");
-    println!("{sees_up}");
-    println!("{sees_down}");
 
-    let total: i32 = izip!(
-        sees_left.data,
-        sees_right.data,
-        sees_up.data,
-        sees_down.data
-    )
-    .map(|(one, two, three, four)| (one || two || three || four) as i32)
-    .sum();
-
-    dbg!(total);
+    println!("{}", scores.data.iter().max().unwrap());
 
     let runtime = start.elapsed();
     dbg!(runtime);
     Ok(())
 }
 
-fn look_left(grid: &Array2<i32>) -> Array2<bool> {
-    let mut sees_left = Array2::<bool>::like(grid);
-
-    for i in 0..grid.n_rows {
-        let mut max = -1;
-        for j in 0..grid.n_cols {
-            sees_left[[i, j]] = grid[[i, j]] > max;
-            max = max.max(grid[[i, j]]);
-        }
-    }
-
-    sees_left
-}
-
-fn look_right(grid: &Array2<i32>) -> Array2<bool> {
-    let mut sees_right = Array2::<bool>::like(grid);
-
-    for i in 0..grid.n_rows {
-        let mut max = -1;
-        for j in (0..grid.n_cols).rev() {
-            sees_right[[i, j]] = grid[[i, j]] > max;
-            // dbg!((grid[[i, j]], max));
-            max = max.max(grid[[i, j]]);
-        }
-    }
-
-    sees_right
-}
-
-fn look_up(grid: &Array2<i32>) -> Array2<bool> {
-    let mut sees_up = Array2::<bool>::like(grid);
-
-    for j in 0..grid.n_cols {
-        let mut max = -1;
-        for i in 0..grid.n_rows {
-            sees_up[[i, j]] = grid[[i, j]] > max;
-            max = max.max(grid[[i, j]]);
-        }
-    }
-
-    sees_up
-}
-
-fn look_down(grid: &Array2<i32>) -> Array2<bool> {
-    let mut sees_down = Array2::<bool>::like(grid);
-
-    for j in 0..grid.n_cols {
-        let mut max = -1;
-        for i in (0..grid.n_rows).rev() {
-            sees_down[[i, j]] = grid[[i, j]] > max;
-            max = max.max(grid[[i, j]]);
-        }
-    }
-
-    sees_down
-}
-
 fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn parse(input: &str) -> Vec<i32> {
+fn parse(input: &str) -> Vec<usize> {
     input
         .lines()
         .map(|line| {
             line.chars()
-                .map(|c| c.to_digit(10).unwrap() as i32)
-                .collect::<Vec<i32>>()
+                .map(|c| c.to_digit(10).unwrap() as usize)
+                .collect::<Vec<usize>>()
         })
         .flatten()
         .collect()
@@ -172,19 +118,3 @@ impl<T: Copy + std::fmt::Debug> Display for Array2<T> {
         Ok(())
     }
 }
-
-// impl<T: Copy> IntoIterator for Array2<T> {
-//     type Item = T;
-
-//     type IntoIter;
-
-//     fn into_iter(self) -> Self::IntoIter {
-//         todo!()
-//     }
-// }
-
-// struct Array2Iter {
-
-// }
-
-// impl Iterator for
