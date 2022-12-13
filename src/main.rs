@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut sum = 0;
     for (i, (list1, list2)) in lists.iter().copied().enumerate() {
         let (list1, list2): (List<u32>, List<u32>) = (list1.parse()?, list2.parse()?);
-        println!("{:}\n{:}", list1, list2);
+        println!("{}\n{}\n", list1, list2);
         if list1 < list2 {
             sum += i + 1;
         }
@@ -69,7 +69,7 @@ impl FromStr for List<u32> {
         }
         // dbg!(s);
         let mut list: List<u32> = List::new();
-        let mut iter = s.chars().enumerate();
+        let mut iter = s.chars().enumerate().peekable();
         while let Some((i0, c)) = iter.next() {
             match c {
                 '[' => {
@@ -86,7 +86,15 @@ impl FromStr for List<u32> {
                 }
                 ',' => {}
                 c if c.is_numeric() => {
-                    let item: u32 = c.to_digit(10).unwrap();
+                    let mut num = String::from(c);
+                    while let Some(&(_, new_c)) = iter.peek() {
+                        if !new_c.is_numeric() {
+                            break;
+                        } else {
+                            num.push(iter.next().unwrap().1);
+                        }
+                    }
+                    let item: u32 = num.parse().unwrap();
                     list.push(Item::Val(item));
                 }
                 c => Err(format!("unkown char {}", c))?,
@@ -141,7 +149,7 @@ impl<T: PartialOrd + Clone> PartialOrd for Item<T> {
                 let mut l = List::new();
                 l.push(o.clone());
                 s.partial_cmp(&l)
-            },
+            }
             (Item::List(s), Item::List(o)) => s.partial_cmp(o),
         }
     }
