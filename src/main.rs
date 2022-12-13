@@ -1,21 +1,28 @@
 #![feature(iter_advance_by)]
-use std::{error::Error, str::FromStr, time::Instant, vec};
+use std::{error::Error, str::FromStr, time::Instant, vec, ops::Index};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let lists = parse(&input)?;
+    let lists_str = parse(&input);
 
-    let mut sum = 0;
-    for (i, (list1, list2)) in lists.iter().copied().enumerate() {
-        let (list1, list2): (List<u32>, List<u32>) = (list1.parse()?, list2.parse()?);
-        println!("{}\n{}\n", list1, list2);
-        if list1 < list2 {
-            sum += i + 1;
-        }
-    }
-    dbg!(sum);
+    let mut lists: Vec<List<u32>> = lists_str
+        .into_iter()
+        .map(|list| -> Result<_, String> {
+            let list: List<u32> = list.parse()?;
+            Ok(list)
+        })
+        .collect::<Result<_, _>>()?;
+
+    lists.sort();
+    let divider1: List<u32> = "[[2]]".parse()?;
+    let divider2: List<u32> = "[[6]]".parse()?;
+    
+    let i1 = lists.binary_search(&divider1).unwrap() + 1;
+    let i2 = lists.binary_search(&divider2).unwrap() + 1;
+
+    dbg!(i1 * i2);
 
     let runtime = start.elapsed();
     dbg!(runtime);
@@ -26,30 +33,22 @@ fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn parse(input: &str) -> Result<Vec<(&str, &str)>, String> {
-    input
-        .split("\n\n")
-        .map(|s| {
-            let Some((left, right)) = s.split_once('\n') else {
-            Err("Input parse error")?
-        };
-            Ok((left, right))
-        })
-        .collect::<Result<_, _>>()
+fn parse(input: &str) -> Vec<&str> {
+    input.lines().filter(|s| !s.is_empty()).collect()
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum Item<T> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Item<T: Clone> {
     Val(T),
     List(List<T>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct List<T> {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct List<T: Clone> {
     items: Vec<Item<T>>,
 }
 
-impl<T> List<T> {
+impl<T: Clone> List<T> {
     fn new() -> Self {
         List { items: vec![] }
     }
@@ -104,7 +103,7 @@ impl FromStr for List<u32> {
     }
 }
 
-impl<T: std::fmt::Display> std::fmt::Display for List<T> {
+impl<T: std::fmt::Display + Clone> std::fmt::Display for List<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
         let len = self.items.len();
@@ -155,9 +154,9 @@ impl<T: PartialOrd + Clone> PartialOrd for Item<T> {
     }
 }
 
-impl<T: PartialOrd + Clone> PartialOrd for List<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.items.partial_cmp(&other.items)
+impl<T: Ord + Clone> Ord for Item<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
 
