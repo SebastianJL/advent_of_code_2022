@@ -1,5 +1,4 @@
-#![feature(iter_advance_by)]
-use std::{error::Error, str::FromStr, time::Instant, vec, ops::Index};
+use std::{error::Error, str::FromStr, time::Instant};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
@@ -18,7 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     lists.sort();
     let divider1: List<u32> = "[[2]]".parse()?;
     let divider2: List<u32> = "[[6]]".parse()?;
-    
+
     let i1 = lists.binary_search(&divider1).unwrap() + 1;
     let i2 = lists.binary_search(&divider2).unwrap() + 1;
 
@@ -80,8 +79,7 @@ impl FromStr for List<u32> {
                     let sublist: List<u32> = s[i0..=i1].parse()?;
                     // println!("{:?}", sublist);
                     list.push(Item::List(sublist));
-                    iter.advance_by(i1 - i0)
-                        .expect("Couldn't advance iterator.");
+                    iter.nth(i1 - i0 - 1).expect("Couldn't advance iterator.");
                 }
                 ',' => {}
                 c if c.is_numeric() => {
