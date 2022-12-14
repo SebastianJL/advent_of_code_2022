@@ -1,179 +1,112 @@
-use std::{error::Error, str::FromStr, time::Instant};
+use std::{collections::HashSet, error::Error, ops::Add, str::FromStr, time::Instant};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let lists_str = parse(&input);
-
-    let mut lists: Vec<List<u32>> = lists_str
-        .into_iter()
-        .map(|list| -> Result<_, String> {
-            let list: List<u32> = list.parse()?;
-            Ok(list)
-        })
-        .collect::<Result<_, _>>()?;
-
-    lists.sort();
-    let divider1: List<u32> = "[[2]]".parse()?;
-    let divider2: List<u32> = "[[6]]".parse()?;
-
-    let i1 = lists.binary_search(&divider1).unwrap() + 1;
-    let i2 = lists.binary_search(&divider2).unwrap() + 1;
-
-    dbg!(i1 * i2);
+    let instructions = parse(&input);
+    let mut obstacles = build_walls(&instructions);
+    // dbg!(walls);
+    let ymax = obstacles.iter().map(|o| o.y).max().unwrap() + 2;
+    let mut run = true;
+    let mut count = 0;
+    let source = Point { x: 500, y: 0 };
+    while run {
+        let mut sandcorn = source;
+        let mut fall = true;
+        count += 1;
+        while fall {
+            if sandcorn.y == ymax  - 1 {
+                fall = false;
+                obstacles.insert(sandcorn);
+            } else if !obstacles.contains(&(sandcorn + (0, 1))) {
+                sandcorn = sandcorn + (0, 1);
+            } else if !obstacles.contains(&(sandcorn + (-1, 1))) {
+                sandcorn = sandcorn + (-1, 1);
+            } else if !obstacles.contains(&(sandcorn + (1, 1))) {
+                sandcorn = sandcorn + (1, 1);
+            } else {
+                fall = false;
+                obstacles.insert(sandcorn);
+                if sandcorn == source {
+                    run = false;
+                }
+            }
+        }
+    }
+    dbg!(count);
 
     let runtime = start.elapsed();
     dbg!(runtime);
     Ok(())
 }
 
+fn build_walls(instructions: &[Vec<Point>]) -> HashSet<Point> {
+    let mut walls = HashSet::new();
+    for point_vec in instructions {
+        for win in point_vec.windows(2) {
+            let (p1, p2) = (win[0], win[1]);
+            if p1.x == p2.x {
+                let (ymin, ymax) = (p1.y.min(p2.y), p1.y.max(p2.y));
+                for yi in ymin..=ymax {
+                    walls.insert(Point { x: p1.x, y: yi });
+                }
+            } else if p1.y == p2.y {
+                let (xmin, xmax) = (p1.x.min(p2.x), p1.x.max(p2.x));
+                for xi in xmin..=xmax {
+                    walls.insert(Point { x: xi, y: p1.y });
+                }
+            } else {
+                panic!("malformed instructions")
+            }
+        }
+    }
+
+    walls
+}
+
 fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn parse(input: &str) -> Vec<&str> {
-    input.lines().filter(|s| !s.is_empty()).collect()
+fn parse(input: &str) -> Vec<Vec<Point>> {
+    input
+        .lines()
+        .map(|line| {
+            line.split(" -> ")
+                .map(|p_str| p_str.parse::<Point>().unwrap())
+                .collect()
+        })
+        .collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Item<T: Clone> {
-    Val(T),
-    List(List<T>),
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct Point {
+    x: usize,
+    y: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct List<T: Clone> {
-    items: Vec<Item<T>>,
-}
-
-impl<T: Clone> List<T> {
-    fn new() -> Self {
-        List { items: vec![] }
-    }
-
-    fn push(&mut self, item: Item<T>) {
-        self.items.push(item);
-    }
-}
-
-impl FromStr for List<u32> {
+impl FromStr for Point {
     type Err = String;
 
-    fn from_str(mut s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with('[') {
-            assert!(s.chars().last().unwrap() == ']');
-            s = &s[1..s.len() - 1];
-        }
-        // dbg!(s);
-        let mut list: List<u32> = List::new();
-        let mut iter = s.chars().enumerate().peekable();
-        while let Some((i0, c)) = iter.next() {
-            match c {
-                '[' => {
-                    // println!("{:?}", &s[i0..s.len()]);
-                    let di = find_matching_paren(&s[i0..s.len()]);
-                    let i1 = i0 + di;
-                    // println!("{i0}, {i1}");
-                    // println!("{:?}", &s[i0..=i1]);
-                    let sublist: List<u32> = s[i0..=i1].parse()?;
-                    // println!("{:?}", sublist);
-                    list.push(Item::List(sublist));
-                    iter.nth(i1 - i0 - 1).expect("Couldn't advance iterator.");
-                }
-                ',' => {}
-                c if c.is_numeric() => {
-                    let mut num = String::from(c);
-                    while let Some(&(_, new_c)) = iter.peek() {
-                        if !new_c.is_numeric() {
-                            break;
-                        } else {
-                            num.push(iter.next().unwrap().1);
-                        }
-                    }
-                    let item: u32 = num.parse().unwrap();
-                    list.push(Item::Val(item));
-                }
-                c => Err(format!("unkown char {}", c))?,
-            }
-        }
-        Ok(list)
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((x, y)) = s.split_once(',') else {
+            Err("Couldn't split input.")?
+        };
+        Ok(Point {
+            x: x.parse().or(Err("Couldn't parse left part.".to_owned()))?,
+            y: y.parse().or(Err("Couldn't parse right part.".to_owned()))?,
+        })
     }
 }
 
-impl<T: std::fmt::Display + Clone> std::fmt::Display for List<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[")?;
-        let len = self.items.len();
-        if len > 0 {
-            for item in self.items.iter().take(len - 1) {
-                match item {
-                    Item::Val(v) => write!(f, "{v},")?,
-                    Item::List(l) => {
-                        l.fmt(f)?;
-                        write!(f, ",")?
-                    }
-                };
-            }
-        }
+impl Add<(isize, isize)> for Point {
+    type Output = Self;
 
-        if let Some(item) = self.items.last() {
-            match item {
-                Item::Val(v) => write!(f, "{v}]")?,
-                Item::List(l) => {
-                    l.fmt(f)?;
-                    write!(f, "]")?
-                }
-            };
-        } else {
-            write!(f, "]")?;
-        }
-
-        Ok(())
-    }
-}
-
-impl<T: PartialOrd + Clone> PartialOrd for Item<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self, other) {
-            (Item::Val(s), Item::Val(o)) => s.partial_cmp(o),
-            (s @ Item::Val(_), Item::List(o)) => {
-                let mut l = List::new();
-                l.push(s.clone());
-                l.partial_cmp(o)
-            }
-            (Item::List(s), o @ Item::Val(_)) => {
-                let mut l = List::new();
-                l.push(o.clone());
-                s.partial_cmp(&l)
-            }
-            (Item::List(s), Item::List(o)) => s.partial_cmp(o),
+    fn add(self, rhs: (isize, isize)) -> Self::Output {
+        Point {
+            x: (self.x as isize + rhs.0) as usize,
+            y: (self.y as isize + rhs.1) as usize,
         }
     }
-}
-
-impl<T: Ord + Clone> Ord for Item<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-fn find_matching_paren(s: &str) -> usize {
-    assert!(s.starts_with('['));
-    let mut stack = 0;
-    let mut index = s.len() - 1;
-    for (i, c) in s.chars().enumerate() {
-        match c {
-            '[' => stack += 1,
-            ']' => {
-                stack -= 1;
-                if stack == 0 {
-                    index = i;
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    index
 }
