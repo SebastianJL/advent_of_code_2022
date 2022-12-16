@@ -1,112 +1,87 @@
-use std::{collections::HashSet, error::Error, ops::Add, str::FromStr, time::Instant};
+use std::{
+    collections::{HashMap},
+    error::Error,
+    time::Instant,
+};
+
+use regex::Regex;
+
+type Graph<'a> = HashMap<&'a str, (u32, Vec<&'a str>)>;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let instructions = parse(&input);
-    let mut obstacles = build_walls(&instructions);
-    // dbg!(walls);
-    let ymax = obstacles.iter().map(|o| o.y).max().unwrap() + 2;
-    let mut run = true;
-    let mut count = 0;
-    let source = Point { x: 500, y: 0 };
-    while run {
-        let mut sandcorn = source;
-        let mut fall = true;
-        count += 1;
-        while fall {
-            if sandcorn.y == ymax  - 1 {
-                fall = false;
-                obstacles.insert(sandcorn);
-            } else if !obstacles.contains(&(sandcorn + (0, 1))) {
-                sandcorn = sandcorn + (0, 1);
-            } else if !obstacles.contains(&(sandcorn + (-1, 1))) {
-                sandcorn = sandcorn + (-1, 1);
-            } else if !obstacles.contains(&(sandcorn + (1, 1))) {
-                sandcorn = sandcorn + (1, 1);
-            } else {
-                fall = false;
-                obstacles.insert(sandcorn);
-                if sandcorn == source {
-                    run = false;
-                }
-            }
-        }
-    }
-    dbg!(count);
+    let graph = parse(&input);
+
+    let start_node = "AA";
+    let mut visited = Vec::new();
+    let depth = 30;
+    let res = max_flow(start_node, &graph, &mut visited, depth);
+    dbg!(res);
 
     let runtime = start.elapsed();
     dbg!(runtime);
     Ok(())
 }
 
-fn build_walls(instructions: &[Vec<Point>]) -> HashSet<Point> {
-    let mut walls = HashSet::new();
-    for point_vec in instructions {
-        for win in point_vec.windows(2) {
-            let (p1, p2) = (win[0], win[1]);
-            if p1.x == p2.x {
-                let (ymin, ymax) = (p1.y.min(p2.y), p1.y.max(p2.y));
-                for yi in ymin..=ymax {
-                    walls.insert(Point { x: p1.x, y: yi });
-                }
-            } else if p1.y == p2.y {
-                let (xmin, xmax) = (p1.x.min(p2.x), p1.x.max(p2.x));
-                for xi in xmin..=xmax {
-                    walls.insert(Point { x: xi, y: p1.y });
-                }
-            } else {
-                panic!("malformed instructions")
-            }
-        }
-    }
-
-    walls
-}
-
 fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn parse(input: &str) -> Vec<Vec<Point>> {
-    input
-        .lines()
-        .map(|line| {
-            line.split(" -> ")
-                .map(|p_str| p_str.parse::<Point>().unwrap())
-                .collect()
-        })
-        .collect()
-}
+fn max_flow<'a>(node: &'a str, g: &'a Graph, visited: &mut Vec<&'a str>, depth: u32) -> u32 {
+    let my_node = node;
+    let (my_flow, next_nodes) = g.get(my_node).unwrap();
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct Point {
-    x: usize,
-    y: usize,
-}
-
-impl FromStr for Point {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let Some((x, y)) = s.split_once(',') else {
-            Err("Couldn't split input.")?
-        };
-        Ok(Point {
-            x: x.parse().or(Err("Couldn't parse left part.".to_owned()))?,
-            y: y.parse().or(Err("Couldn't parse right part.".to_owned()))?,
-        })
+    if depth == 2 {
+        return my_flow * (depth - 1);
+    } else if depth < 2 {
+        return 0;
     }
+    // dbg!(visited.len());
+    if g.len() == visited.len() {
+        return 0;
+    }
+
+    // Open your own valve then move on.
+    let mut option_1 = 0;
+    if !visited.contains(&my_node) && depth >= 2 && *my_flow != 0 {
+        visited.push(my_node);
+        // dbg!(&visited);
+        option_1 = my_flow * (depth - 1)
+            + next_nodes
+                .iter()
+                .map(|node| max_flow(node, g, visited, depth - 2))
+                .max()
+                .unwrap();
+        visited.pop();
+    }
+
+    // Don't open your own valve. Move on directly.
+    let option_2 = next_nodes
+        .iter()
+        .map(|node| max_flow(node, g, visited, depth - 1))
+        .max()
+        .unwrap();
+
+    return option_1.max(option_2);
 }
 
-impl Add<(isize, isize)> for Point {
-    type Output = Self;
+fn parse(input: &str) -> Graph {
+    let re_nodes = Regex::new(r"[A-Z][A-Z]").unwrap();
+    let re_flow = Regex::new(r"\d+").unwrap();
+    let mut hm = HashMap::new();
 
-    fn add(self, rhs: (isize, isize)) -> Self::Output {
-        Point {
-            x: (self.x as isize + rhs.0) as usize,
-            y: (self.y as isize + rhs.1) as usize,
-        }
+    for line in input.lines() {
+        let fma = re_flow.find(line).unwrap();
+        let flow = line[fma.start()..fma.end()].parse::<u32>().unwrap();
+        let mut nodes = re_nodes
+            .find_iter(line)
+            .map(|ma| &line[ma.start()..ma.end()])
+            .collect::<Vec<&str>>();
+        let key = nodes.remove(0);
+        hm.insert(key, (flow, nodes));
     }
+
+    hm
 }
