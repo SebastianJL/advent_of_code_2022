@@ -7,7 +7,7 @@ struct Node {
     flow: u32,
     next: Vec<usize>,
 }
-type Graph<'a> = Vec<Node>;
+type Graph = Vec<Node>;
 type State = (usize, u64, u32);
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let input = read();
     let (start_node, graph) = parse(&input);
+    println!("{graph:?}");
 
     let opened = 0_u64;
     let depth = 30;
@@ -32,33 +33,32 @@ fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn max_flow<'a>(
-    start_node: usize,
-    graph: &'a Graph,
-    mut open: u64,
+fn max_flow(
+    my_node: usize,
+    graph: &Graph,
+    open: u64,
     depth: u32,
     cache: &mut HashMap<State, u32>,
 ) -> u32 {
+
     // If result has been cached return it directly.
-    let state = (start_node, open, depth);
+    let state = (my_node, open, depth);
     if let Some(res) = cache.get(&state) {
         return *res;
     }
-    if depth < 2 {
+    if depth < 1 {
         return 0;
     }
 
-    let my_node = start_node;
     let Node {
         flow: my_flow,
         next: next_nodes,
     } = graph.get(my_node).unwrap();
 
-
     // Open your own valve then move on.
     let mut option_1 = 0;
-    if *my_flow != 0 && (open & (1 << my_node) == 0) {
-        open |= 1 << my_node;
+    if *my_flow != 0 && (open & (1 << my_node) == 0) && depth >= 2 {
+        let open = open | 1 << my_node;
         option_1 = my_flow * (depth - 1)
             + next_nodes
                 .iter()
@@ -101,7 +101,7 @@ fn parse(input: &str) -> (usize, Graph) {
     let graph: Vec<_> = what
         .iter()
         .cloned()
-        .map(|(_, (flow, nodes))| Node {
+        .map(|(key, (flow, nodes))| {dbg!(key, &nodes, flow); Node {
             flow,
             next: nodes
                 .into_iter()
@@ -111,7 +111,7 @@ fn parse(input: &str) -> (usize, Graph) {
                         .unwrap()
                 })
                 .collect(),
-        })
+        }})
         .collect();
     let start_node = what.iter().position(|(node, _)| *node == "AA").unwrap();
     (start_node, graph)
