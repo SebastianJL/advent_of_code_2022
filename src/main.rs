@@ -8,20 +8,22 @@ struct Node {
     next: Vec<usize>,
 }
 type Graph = Vec<Node>;
-type State = (usize, u64, u32);
+type State = (usize, u64, u32, u32);
+const DEPTH: u32 = 26;
+const START_NODE: usize = 0;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let (start_node, graph) = parse(&input);
+    let graph = parse(&input);
     println!("{graph:?}");
 
     let opened = 0_u64;
-    let depth = 30;
+    let n_players = 2;
     let mut cache = HashMap::new();
-    // println!("{graph:?}");
-    let res = max_flow(start_node, &graph, opened, depth, &mut cache);
+
+    let res = max_flow(START_NODE, &graph, opened, DEPTH, n_players, &mut cache);
     dbg!(res);
 
     let runtime = start.elapsed();
@@ -38,16 +40,22 @@ fn max_flow(
     graph: &Graph,
     open: u64,
     depth: u32,
+    n_players: u32,
     cache: &mut HashMap<State, u32>,
 ) -> u32 {
-
     // If result has been cached return it directly.
-    let state = (my_node, open, depth);
+    let state = (my_node, open, depth, n_players);
     if let Some(res) = cache.get(&state) {
         return *res;
     }
     if depth < 1 {
-        return 0;
+        if n_players >= 2 {
+            return max_flow(START_NODE, graph, open, DEPTH, n_players - 1, cache);
+        } else if n_players == 1 {
+            return 0;
+        } else {
+            panic!("n_players shouldn't be less then 1. n_players = {n_players}");
+        }
     }
 
     let Node {
@@ -62,7 +70,7 @@ fn max_flow(
         option_1 = my_flow * (depth - 1)
             + next_nodes
                 .iter()
-                .map(|node| max_flow(*node, graph, open, depth - 2, cache))
+                .map(|node| max_flow(*node, graph, open, depth - 2, n_players, cache))
                 .max()
                 .unwrap();
     }
@@ -70,7 +78,7 @@ fn max_flow(
     // Don't open your own valve. Move on directly.
     let option_2 = next_nodes
         .iter()
-        .map(|node| max_flow(*node, graph, open, depth - 1, cache))
+        .map(|node| max_flow(*node, graph, open, depth - 1, n_players, cache))
         .max()
         .unwrap();
 
@@ -79,7 +87,7 @@ fn max_flow(
     res
 }
 
-fn parse(input: &str) -> (usize, Graph) {
+fn parse(input: &str) -> Graph {
     let re_nodes = Regex::new(r"[A-Z][A-Z]").unwrap();
     let re_flow = Regex::new(r"\d+").unwrap();
     let mut hm = HashMap::new();
@@ -97,11 +105,12 @@ fn parse(input: &str) -> (usize, Graph) {
 
     let mut what: Vec<_> = hm.into_iter().collect();
     // Sort what by flow.
-    what.sort_by(|(_, (flow_a, _)), (_, (flow_b, _))| flow_b.cmp(flow_a));
+    let start_node = what.iter().position(|(node, _)| *node == "AA").unwrap();
+    what[0..=start_node].rotate_right(1);
     let graph: Vec<_> = what
         .iter()
         .cloned()
-        .map(|(key, (flow, nodes))| {dbg!(key, &nodes, flow); Node {
+        .map(|(_, (flow, nodes))| Node {
             flow,
             next: nodes
                 .into_iter()
@@ -111,8 +120,7 @@ fn parse(input: &str) -> (usize, Graph) {
                         .unwrap()
                 })
                 .collect(),
-        }})
+        })
         .collect();
-    let start_node = what.iter().position(|(node, _)| *node == "AA").unwrap();
-    (start_node, graph)
+    graph
 }
