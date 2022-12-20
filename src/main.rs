@@ -1,126 +1,113 @@
-use std::{collections::HashMap, error::Error, time::Instant};
+use std::{collections::HashSet, error::Error, time::Instant};
 
-use regex::Regex;
+use ndarray::Array2;
 
-#[derive(Debug)]
-struct Node {
-    flow: u32,
-    next: Vec<usize>,
-}
-type Graph = Vec<Node>;
-type State = (usize, u64, u32, u32);
-const DEPTH: u32 = 26;
-const START_NODE: usize = 0;
+const START: i32 = -1;
+const END: i32 = 26;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let graph = parse(&input);
-    println!("{graph:?}");
+    let map = parse(&input);
+    dbg!(&map);
 
-    let opened = 0_u64;
-    let n_players = 2;
-    let mut cache = HashMap::new();
+    let shortest_path = flow(&map);
 
-    let res = max_flow(START_NODE, &graph, opened, DEPTH, n_players, &mut cache);
-    dbg!(res);
+    dbg!(shortest_path);
 
     let runtime = start.elapsed();
     dbg!(runtime);
     Ok(())
 }
 
+fn find_index(element: i32, map: &Array2<i32>) -> Option<(usize, usize)> {
+    map.outer_iter().enumerate().find_map(|(i, row)| {
+        match row.into_iter().position(|&x| x == element) {
+            Some(j) => Some((i, j)),
+            None => None,
+        }
+    })
+}
+
+fn flow(map: &Array2<i32>) -> u32 {
+    let start_idx = find_index(START, &map).unwrap();
+    let end_idx = find_index(END, &map).unwrap();
+
+    let mut visited: HashSet<(usize, usize)> = HashSet::new();
+    let mut rim = HashSet::new();
+    let mut new_rim = HashSet::new();
+
+    visited.insert(start_idx);
+    rim.insert(start_idx);
+
+    let mut count = 0;
+    loop {
+        count += 1;
+
+        new_rim.clear();
+        for &idx in rim.iter() {
+            // Check up
+            if idx.0 > 0 {
+                let up = (idx.0 - 1, idx.1);
+                if map[up] - map[idx] <= 1 && !visited.contains(&up) {
+                    new_rim.insert(up);
+                }
+            }
+
+            // Check down
+            if idx.0 < map.dim().0 - 1 {
+                let down = (idx.0 + 1, idx.1);
+                if map[down] - map[idx] <= 1 && !visited.contains(&down) {
+                    new_rim.insert(down);
+                }
+            }
+
+            // Check left
+            if idx.1 > 0 {
+                let left = (idx.0, idx.1 - 1);
+                if map[left] - map[idx] <= 1 && !visited.contains(&left) {
+                    new_rim.insert(left);
+                }
+            }
+
+            // Check right
+            if idx.1 < map.dim().1 - 1 {
+                let right = (idx.0, idx.1 + 1);
+                if map[right] - map[idx] <= 1 && !visited.contains(&right) {
+                    new_rim.insert(right);
+                }
+            }
+        }
+        if new_rim.contains(&end_idx) {
+            break;
+        }
+        visited.extend(&new_rim);
+        std::mem::swap(&mut rim, &mut new_rim);
+    }
+
+    count
+}
+
 fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn max_flow(
-    my_node: usize,
-    graph: &Graph,
-    open: u64,
-    depth: u32,
-    n_players: u32,
-    cache: &mut HashMap<State, u32>,
-) -> u32 {
-    // If result has been cached return it directly.
-    let state = (my_node, open, depth, n_players);
-    if let Some(res) = cache.get(&state) {
-        return *res;
-    }
-    if depth < 1 {
-        if n_players >= 2 {
-            return max_flow(START_NODE, graph, open, DEPTH, n_players - 1, cache);
-        } else if n_players == 1 {
-            return 0;
-        } else {
-            panic!("n_players shouldn't be less then 1. n_players = {n_players}");
-        }
-    }
+fn parse(input: &str) -> Array2<i32> {
+    let n_cols = input.lines().next().unwrap().chars().count();
+    let n_rows = input.lines().count();
 
-    let Node {
-        flow: my_flow,
-        next: next_nodes,
-    } = graph.get(my_node).unwrap();
-
-    // Open your own valve then move on.
-    let mut option_1 = 0;
-    if *my_flow != 0 && (open & (1 << my_node) == 0) && depth >= 2 {
-        let open = open | 1 << my_node;
-        option_1 = my_flow * (depth - 1)
-            + next_nodes
-                .iter()
-                .map(|node| max_flow(*node, graph, open, depth - 2, n_players, cache))
-                .max()
-                .unwrap();
-    }
-
-    // Don't open your own valve. Move on directly.
-    let option_2 = next_nodes
-        .iter()
-        .map(|node| max_flow(*node, graph, open, depth - 1, n_players, cache))
-        .max()
-        .unwrap();
-
-    let res = option_1.max(option_2);
-    cache.insert(state, res);
-    res
-}
-
-fn parse(input: &str) -> Graph {
-    let re_nodes = Regex::new(r"[A-Z][A-Z]").unwrap();
-    let re_flow = Regex::new(r"\d+").unwrap();
-    let mut hm = HashMap::new();
-
-    for line in input.lines() {
-        let fma = re_flow.find(line).unwrap();
-        let flow = line[fma.start()..fma.end()].parse::<u32>().unwrap();
-        let mut nodes = re_nodes
-            .find_iter(line)
-            .map(|ma| &line[ma.start()..ma.end()])
-            .collect::<Vec<&str>>();
-        let key = nodes.remove(0);
-        hm.insert(key, (flow, nodes));
-    }
-
-    let mut what: Vec<_> = hm.into_iter().collect();
-    // Sort what by flow.
-    let start_node = what.iter().position(|(node, _)| *node == "AA").unwrap();
-    what[0..=start_node].rotate_right(1);
-    let graph: Vec<_> = what
-        .iter()
-        .cloned()
-        .map(|(_, (flow, nodes))| Node {
-            flow,
-            next: nodes
-                .into_iter()
-                .map(|node_a| {
-                    what.iter()
-                        .position(|(node_b, _)| *node_b == node_a)
-                        .unwrap()
-                })
-                .collect(),
+    let map: Vec<i32> = input
+        .lines()
+        .flat_map(|line| {
+            line.chars().map(|c| match c {
+                'S' => START,
+                'E' => END,
+                c => c as i32 - 'a' as i32,
+            })
         })
         .collect();
-    graph
+
+    let map = Array2::from_shape_vec([n_rows, n_cols], map).unwrap();
+    map
 }
