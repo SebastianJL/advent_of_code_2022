@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let input = read();
     let map = parse(&input);
-    dbg!(&map);
+    // dbg!(&map);
 
     let shortest_path = flow(&map);
 
@@ -31,8 +31,8 @@ fn find_index(element: i32, map: &Array2<i32>) -> Option<(usize, usize)> {
 }
 
 fn flow(map: &Array2<i32>) -> u32 {
-    let start_idx = find_index(START, &map).unwrap();
-    let end_idx = find_index(END, &map).unwrap();
+    let start_idx = find_index(END, &map).unwrap();
+    let end_idx = find_index(START, &map).unwrap();
 
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
     let mut rim = HashSet::new();
@@ -42,7 +42,7 @@ fn flow(map: &Array2<i32>) -> u32 {
     rim.insert(start_idx);
 
     let mut count = 0;
-    loop {
+    'outer: loop {
         count += 1;
 
         new_rim.clear();
@@ -50,7 +50,8 @@ fn flow(map: &Array2<i32>) -> u32 {
             // Check up
             if idx.0 > 0 {
                 let up = (idx.0 - 1, idx.1);
-                if map[up] - map[idx] <= 1 && !visited.contains(&up) {
+                let diff = map[up] - map[idx];
+                if diff.abs() <= 1 && !visited.contains(&up) {
                     new_rim.insert(up);
                 }
             }
@@ -58,7 +59,8 @@ fn flow(map: &Array2<i32>) -> u32 {
             // Check down
             if idx.0 < map.dim().0 - 1 {
                 let down = (idx.0 + 1, idx.1);
-                if map[down] - map[idx] <= 1 && !visited.contains(&down) {
+                let diff = map[down] - map[idx];
+                if diff.abs() <= 1 && !visited.contains(&down) {
                     new_rim.insert(down);
                 }
             }
@@ -66,7 +68,8 @@ fn flow(map: &Array2<i32>) -> u32 {
             // Check left
             if idx.1 > 0 {
                 let left = (idx.0, idx.1 - 1);
-                if map[left] - map[idx] <= 1 && !visited.contains(&left) {
+                let diff = map[left] - map[idx];
+                if diff.abs() <= 1 && !visited.contains(&left) {
                     new_rim.insert(left);
                 }
             }
@@ -74,13 +77,20 @@ fn flow(map: &Array2<i32>) -> u32 {
             // Check right
             if idx.1 < map.dim().1 - 1 {
                 let right = (idx.0, idx.1 + 1);
-                if map[right] - map[idx] <= 1 && !visited.contains(&right) {
+                let diff = map[right] - map[idx];
+                if diff.abs() <= 1 && !visited.contains(&right) {
                     new_rim.insert(right);
                 }
             }
         }
-        if new_rim.contains(&end_idx) {
+        dbg!(&new_rim);
+        if new_rim.len() == 0 {
             break;
+        }
+        for &idx in &new_rim {
+            if map[idx] == 0 {
+                break 'outer;
+            }
         }
         visited.extend(&new_rim);
         std::mem::swap(&mut rim, &mut new_rim);
