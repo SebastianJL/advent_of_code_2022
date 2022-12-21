@@ -1,3 +1,4 @@
+use core::panic;
 use std::{collections::HashMap, error::Error, time::Instant};
 
 use nom::{
@@ -14,7 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let input = read();
     let jobs = parse(&input).unwrap();
 
-    let result = yells("root", &jobs);
+    let result = find_humanz_yellings("root", &jobs);
     dbg!(result);
 
     let runtime = start.elapsed();
@@ -26,18 +27,35 @@ fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn yells(monkey: &str, jobs: &HashMap<&str, Job>) -> i64 {
-    let job = jobs.get(monkey).unwrap();
+fn find_humanz_yellings(monkey: &str, jobs: &HashMap<&str, Job>) -> i64 {
+    let &Job::Op(Operation::Add(left, right)) = jobs.get("root").unwrap() else {
+        panic!("Couldn't find root job.");
+    };
+    let (left, right) = (yells(left, jobs), yells(right, jobs));
+    match (left, right) {
+        (Some(res), None) => {},
+        (None, Some(res)) => {},
+        (Some(_), Some(_)) => panic!("Both arms contain the human."),
+        (None, None) => panic!("No arm contains the human."),
+    }
+}
 
-    match job {
+fn yells(monkey: &str, jobs: &HashMap<&str, Job>) -> Option<i64> {
+    let job = jobs.get(monkey).unwrap();
+    if monkey == "humn" {
+        return None;
+    }
+
+    let res = match job {
         &Job::Val(val) => val,
         &Job::Op(op) => match op {
-            Operation::Add(l, r) => yells(l, jobs) + yells(r, jobs),
-            Operation::Sub(l, r) => yells(l, jobs) - yells(r, jobs),
-            Operation::Mul(l, r) => yells(l, jobs) * yells(r, jobs),
-            Operation::Div(l, r) => yells(l, jobs) / yells(r, jobs),
+            Operation::Add(l, r) => yells(l, jobs)? + yells(r, jobs)?,
+            Operation::Sub(l, r) => yells(l, jobs)? - yells(r, jobs)?,
+            Operation::Mul(l, r) => yells(l, jobs)? * yells(r, jobs)?,
+            Operation::Div(l, r) => yells(l, jobs)? / yells(r, jobs)?,
         },
-    }
+    };
+    Some(res)
 }
 
 fn operation(input: &str) -> IResult<&str, Job> {
@@ -71,9 +89,9 @@ fn job(input: &str) -> IResult<&str, Job> {
 fn parse_line(input: &str) -> IResult<&str, (&str, Job)> {
     let (input, name) = alpha1(input)?;
     let (input, _) = tag(": ")(input)?;
-    let (input, value) = job(input)?;
+    let (input, job) = job(input)?;
 
-    Ok((input, (name, value)))
+    Ok((input, (name, job)))
 }
 
 fn parse(input: &str) -> Result<HashMap<&str, Job>, String> {
