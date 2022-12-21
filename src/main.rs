@@ -2,8 +2,8 @@ use std::{collections::HashSet, error::Error, time::Instant};
 
 use ndarray::Array2;
 
-const START: i32 = -1;
-const END: i32 = 26;
+const START: i32 = 26;
+const END: i32 = 0;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
@@ -31,8 +31,7 @@ fn find_index(element: i32, map: &Array2<i32>) -> Option<(usize, usize)> {
 }
 
 fn flow(map: &Array2<i32>) -> u32 {
-    let start_idx = find_index(END, &map).unwrap();
-    let end_idx = find_index(START, &map).unwrap();
+    let start_idx = find_index(START, &map).unwrap();
 
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
     let mut rim = HashSet::new();
@@ -51,7 +50,7 @@ fn flow(map: &Array2<i32>) -> u32 {
             if idx.0 > 0 {
                 let up = (idx.0 - 1, idx.1);
                 let diff = map[up] - map[idx];
-                if diff.abs() <= 1 && !visited.contains(&up) {
+                if diff >= -1 && !visited.contains(&up) {
                     new_rim.insert(up);
                 }
             }
@@ -60,7 +59,7 @@ fn flow(map: &Array2<i32>) -> u32 {
             if idx.0 < map.dim().0 - 1 {
                 let down = (idx.0 + 1, idx.1);
                 let diff = map[down] - map[idx];
-                if diff.abs() <= 1 && !visited.contains(&down) {
+                if diff >= -1 && !visited.contains(&down) {
                     new_rim.insert(down);
                 }
             }
@@ -69,7 +68,7 @@ fn flow(map: &Array2<i32>) -> u32 {
             if idx.1 > 0 {
                 let left = (idx.0, idx.1 - 1);
                 let diff = map[left] - map[idx];
-                if diff.abs() <= 1 && !visited.contains(&left) {
+                if diff >= -1 && !visited.contains(&left) {
                     new_rim.insert(left);
                 }
             }
@@ -78,17 +77,17 @@ fn flow(map: &Array2<i32>) -> u32 {
             if idx.1 < map.dim().1 - 1 {
                 let right = (idx.0, idx.1 + 1);
                 let diff = map[right] - map[idx];
-                if diff.abs() <= 1 && !visited.contains(&right) {
+                if diff >= -1 && !visited.contains(&right) {
                     new_rim.insert(right);
                 }
             }
         }
         dbg!(&new_rim);
         if new_rim.len() == 0 {
-            break;
+            panic!("Didn't find END = {END}.")
         }
         for &idx in &new_rim {
-            if map[idx] == 0 {
+            if map[idx] == END {
                 break 'outer;
             }
         }
@@ -111,8 +110,8 @@ fn parse(input: &str) -> Array2<i32> {
         .lines()
         .flat_map(|line| {
             line.chars().map(|c| match c {
-                'S' => START,
-                'E' => END,
+                'S' => END,
+                'E' => START,
                 c => c as i32 - 'a' as i32,
             })
         })
