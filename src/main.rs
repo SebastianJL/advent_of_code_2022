@@ -1,122 +1,102 @@
-use std::{collections::HashSet, error::Error, time::Instant};
+use std::{collections::HashMap, error::Error, time::Instant};
 
-use ndarray::Array2;
-
-const START: i32 = 26;
-const END: i32 = 0;
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::{alpha1, multispace1},
+    multi::separated_list0,
+    IResult,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let map = parse(&input);
-    // dbg!(&map);
+    let jobs = parse(&input).unwrap();
 
-    let shortest_path = flow(&map);
-
-    dbg!(shortest_path);
+    let result = yells("root", &jobs);
+    dbg!(result);
 
     let runtime = start.elapsed();
     dbg!(runtime);
     Ok(())
 }
 
-fn find_index(element: i32, map: &Array2<i32>) -> Option<(usize, usize)> {
-    map.outer_iter().enumerate().find_map(|(i, row)| {
-        match row.into_iter().position(|&x| x == element) {
-            Some(j) => Some((i, j)),
-            None => None,
-        }
-    })
-}
-
-fn flow(map: &Array2<i32>) -> u32 {
-    let start_idx = find_index(START, &map).unwrap();
-
-    let mut visited: HashSet<(usize, usize)> = HashSet::new();
-    let mut rim = HashSet::new();
-    let mut new_rim = HashSet::new();
-
-    visited.insert(start_idx);
-    rim.insert(start_idx);
-
-    let mut count = 0;
-    'outer: loop {
-        count += 1;
-
-        new_rim.clear();
-        for &idx in rim.iter() {
-            // Check up
-            if idx.0 > 0 {
-                let up = (idx.0 - 1, idx.1);
-                let diff = map[up] - map[idx];
-                if diff >= -1 && !visited.contains(&up) {
-                    new_rim.insert(up);
-                }
-            }
-
-            // Check down
-            if idx.0 < map.dim().0 - 1 {
-                let down = (idx.0 + 1, idx.1);
-                let diff = map[down] - map[idx];
-                if diff >= -1 && !visited.contains(&down) {
-                    new_rim.insert(down);
-                }
-            }
-
-            // Check left
-            if idx.1 > 0 {
-                let left = (idx.0, idx.1 - 1);
-                let diff = map[left] - map[idx];
-                if diff >= -1 && !visited.contains(&left) {
-                    new_rim.insert(left);
-                }
-            }
-
-            // Check right
-            if idx.1 < map.dim().1 - 1 {
-                let right = (idx.0, idx.1 + 1);
-                let diff = map[right] - map[idx];
-                if diff >= -1 && !visited.contains(&right) {
-                    new_rim.insert(right);
-                }
-            }
-        }
-        dbg!(&new_rim);
-        if new_rim.len() == 0 {
-            panic!("Didn't find END = {END}.")
-        }
-        for &idx in &new_rim {
-            if map[idx] == END {
-                break 'outer;
-            }
-        }
-        visited.extend(&new_rim);
-        std::mem::swap(&mut rim, &mut new_rim);
-    }
-
-    count
-}
-
 fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn parse(input: &str) -> Array2<i32> {
-    let n_cols = input.lines().next().unwrap().chars().count();
-    let n_rows = input.lines().count();
+fn yells(monkey: &str, jobs: &HashMap<&str, Job>) -> i64 {
+    let job = jobs.get(monkey).unwrap();
 
-    let map: Vec<i32> = input
-        .lines()
-        .flat_map(|line| {
-            line.chars().map(|c| match c {
-                'S' => END,
-                'E' => START,
-                c => c as i32 - 'a' as i32,
-            })
-        })
-        .collect();
+    match job {
+        &Job::Val(val) => val,
+        &Job::Op(op) => match op {
+            Operation::Add(l, r) => yells(l, jobs) + yells(r, jobs),
+            Operation::Sub(l, r) => yells(l, jobs) - yells(r, jobs),
+            Operation::Mul(l, r) => yells(l, jobs) * yells(r, jobs),
+            Operation::Div(l, r) => yells(l, jobs) / yells(r, jobs),
+        },
+    }
+}
 
-    let map = Array2::from_shape_vec([n_rows, n_cols], map).unwrap();
-    map
+fn operation(input: &str) -> IResult<&str, Job> {
+    let (input, operand1) = alpha1(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, binary_op) = alt((tag("+"), tag("-"), tag("/"), tag("*")))(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, operand2) = alpha1(input)?;
+
+    let operation = match binary_op {
+        "+" => Operation::Add(operand1, operand2),
+        "-" => Operation::Sub(operand1, operand2),
+        "*" => Operation::Mul(operand1, operand2),
+        "/" => Operation::Div(operand1, operand2),
+        c => panic!("Invalid binary operator {c}"),
+    };
+
+    Ok((input, Job::Op(operation)))
+}
+
+fn value(input: &str) -> IResult<&str, Job> {
+    let (input, val) = nom::character::complete::i64(input)?;
+    Ok((input, Job::Val(val)))
+}
+
+fn job(input: &str) -> IResult<&str, Job> {
+    let (input, job) = alt((value, operation))(input)?;
+    Ok((input, job))
+}
+
+fn parse_line(input: &str) -> IResult<&str, (&str, Job)> {
+    let (input, name) = alpha1(input)?;
+    let (input, _) = tag(": ")(input)?;
+    let (input, value) = job(input)?;
+
+    Ok((input, (name, value)))
+}
+
+fn parse(input: &str) -> Result<HashMap<&str, Job>, String> {
+    let (input, monkeys) = match separated_list0(tag("\n"), parse_line)(input) {
+        Ok(monkeys) => monkeys,
+        Err(_) => Err("bla")?,
+    };
+    if !input.is_empty() {
+        Err("Couldn't parse entire input. Residual {input}")?;
+    }
+    Ok(monkeys.into_iter().collect())
+}
+
+#[derive(Debug, Copy, Clone)]
+enum Operation<'a> {
+    Add(&'a str, &'a str),
+    Sub(&'a str, &'a str),
+    Mul(&'a str, &'a str),
+    Div(&'a str, &'a str),
+}
+
+#[derive(Debug, Copy, Clone)]
+enum Job<'a> {
+    Val(i64),
+    Op(Operation<'a>),
 }
