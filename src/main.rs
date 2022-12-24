@@ -1,120 +1,257 @@
-use core::panic;
-use std::{collections::HashMap, error::Error, time::Instant};
+use std::{
+    collections::HashMap,
+    error::Error,
+    ops::{Add, AddAssign, SubAssign},
+    time::Instant, num::NonZeroUsize,
+};
 
+use lru::LruCache;
 use nom::{
-    branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, multispace1},
-    multi::separated_list0,
+    character::complete::{alpha1, digit1, multispace1},
+    multi::separated_list1,
     IResult,
 };
+use rayon::prelude::*;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let jobs = parse(&input).unwrap();
+    let blueprints = parse(&input);
+    let minutes = 24;
 
-    let result = find_humanz_yellings("root", &jobs);
-    dbg!(result);
+    let res: u32 = blueprints.into_par_iter().enumerate().map(|(i, bp)| {
+        let mut robots = Resource::default();
+        robots.ore = 1;
+        let resources = Resource::default();
+        let cache_size = 2usize.pow(15);
+        let mut cache = LruCache::new(NonZeroUsize::new(cache_size).unwrap());
+        let max_geode = find_most_geodes(bp, robots, resources, minutes, &mut cache);
+        dbg!(max_geode);
+        dbg!(max_geode.geode as usize * dbg!(i+1));
+        max_geode.geode * (i+1) as u32
+    }).sum();
+
+    dbg!(res);
 
     let runtime = start.elapsed();
     dbg!(runtime);
     Ok(())
 }
 
+fn find_most_geodes(
+    bp: Blueprint,
+    robots: Resource,
+    resources: Resource,
+    minutes: u32,
+    cache: &mut LruCache<(Blueprint, Resource, Resource, u32), Resource>,
+) -> Resource {
+    let state = (bp, robots, resources, minutes);
+    if cache.contains(&state) {
+        return *cache.get(&state).unwrap();
+    }
+
+    if minutes <= 0 {
+        return resources;
+    }
+
+    let mut max_geodes = [Resource::default(); 5];
+
+    if bp.ore_robot <= resources {
+        let mut resources = resources;
+        let mut robots = robots;
+        resources -= bp.ore_robot;
+        resources += robots;
+        robots.ore += 1;
+        max_geodes[0] += find_most_geodes(bp, robots, resources, minutes - 1, cache);
+    }
+
+    if bp.clay_robot <= resources {
+        let mut res = resources;
+        let mut rob = robots;
+        res -= bp.clay_robot;
+        res += rob;
+        rob.clay += 1;
+        max_geodes[1] += find_most_geodes(bp, rob, res, minutes - 1, cache);
+    }
+
+    if bp.obsidian_robot <= resources {
+        let mut resources = resources;
+        let mut robots = robots;
+        resources -= bp.obsidian_robot;
+        resources += robots;
+        robots.obsidian += 1;
+        max_geodes[2] += find_most_geodes(bp, robots, resources, minutes - 1, cache);
+    }
+
+    if bp.geode_robot <= resources {
+        let mut resources = resources;
+        let mut robots = robots;
+        resources -= bp.geode_robot;
+        resources += robots;
+        robots.geode += 1;
+        max_geodes[3] += find_most_geodes(bp, robots, resources, minutes - 1, cache);
+    }
+
+    // Don't buy a robot.
+    {
+        let mut resources = resources;
+        let robots = robots;
+        resources += robots;
+        max_geodes[4] += find_most_geodes(bp, robots, resources, minutes - 1, cache);
+    }
+
+    let max_geode = max_geodes.into_iter().max_by_key(|res| res.geode).unwrap();
+    cache.put(state, max_geode);
+    return max_geode;
+}
+
+fn parse_resource(input: &str) -> IResult<&str, (&str, u32)> {
+    let (input, amount) = nom::character::complete::u32(input)?;
+    let (input, _) = tag(" ")(input)?;
+    let (input, name) = alpha1(input)?;
+    Ok((input, (name, amount)))
+}
+
+fn parse_cost(input: &str) -> IResult<&str, Resource> {
+    let (input, _) = multispace1(input)?;
+    let (input, _) = separated_list1(multispace1, alpha1)(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, resources) = separated_list1(tag(" and "), parse_resource)(input)?;
+    let resources: HashMap<&str, u32> = resources.into_iter().collect();
+    let (input, _) = tag(".")(input)?;
+
+    let resource = Resource {
+        ore: *resources.get("ore").unwrap_or(&0),
+        clay: *resources.get("clay").unwrap_or(&0),
+        obsidian: *resources.get("obsidian").unwrap_or(&0),
+        geode: *resources.get("geode").unwrap_or(&0),
+    };
+
+    Ok((input, resource))
+}
+
+fn parse_blueprint(input: &str) -> IResult<&str, Blueprint> {
+    let (input, _) = alpha1(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, _) = digit1(input)?;
+    let (input, _) = tag(":")(input)?;
+    let (input, ore_robot) = parse_cost(input)?;
+    let (input, clay_robot) = parse_cost(input)?;
+    let (input, obsidian_robot) = parse_cost(input)?;
+    let (input, geode_robot) = parse_cost(input)?;
+
+    let blueprint = Blueprint {
+        ore_robot,
+        clay_robot,
+        obsidian_robot,
+        geode_robot,
+    };
+
+    Ok((input, blueprint))
+}
+
+fn parse(input: &str) -> Vec<Blueprint> {
+    let (_, blueprints) = separated_list1(tag("\n"), parse_blueprint)(input).unwrap();
+    blueprints
+}
+
 fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn find_humanz_yellings(monkey: &str, jobs: &HashMap<&str, Job>) -> i64 {
-    let &Job::Op(Operation::Add(left, right)) = jobs.get("root").unwrap() else {
-        panic!("Couldn't find root job.");
-    };
-    let (left, right) = (yells(left, jobs), yells(right, jobs));
-    match (left, right) {
-        (Some(res), None) => {},
-        (None, Some(res)) => {},
-        (Some(_), Some(_)) => panic!("Both arms contain the human."),
-        (None, None) => panic!("No arm contains the human."),
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
+struct Resource {
+    ore: u32,
+    clay: u32,
+    obsidian: u32,
+    geode: u32,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+struct Blueprint {
+    ore_robot: Resource,
+    clay_robot: Resource,
+    obsidian_robot: Resource,
+    geode_robot: Resource,
+}
+
+impl Add for Resource {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Resource {
+            ore: self.ore + rhs.ore,
+            clay: self.clay + rhs.clay,
+            obsidian: self.obsidian + rhs.obsidian,
+            geode: self.geode + rhs.geode,
+        }
     }
 }
 
-fn yells(monkey: &str, jobs: &HashMap<&str, Job>) -> Option<i64> {
-    let job = jobs.get(monkey).unwrap();
-    if monkey == "humn" {
-        return None;
+impl AddAssign for Resource {
+    fn add_assign(&mut self, rhs: Self) {
+        self.ore += rhs.ore;
+        self.clay += rhs.clay;
+        self.obsidian += rhs.obsidian;
+        self.geode += rhs.geode;
+    }
+}
+
+impl SubAssign for Resource {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.ore -= rhs.ore;
+        self.clay -= rhs.clay;
+        self.obsidian -= rhs.obsidian;
+        self.geode -= rhs.geode;
+    }
+}
+
+impl PartialOrd for Resource {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use core::cmp::Ordering::*;
+        match (
+            self.ore.partial_cmp(&other.ore),
+            self.clay.partial_cmp(&other.clay),
+            self.obsidian.partial_cmp(&other.obsidian),
+            self.geode.partial_cmp(&other.geode),
+        ) {
+            (Some(Equal), Some(Equal), Some(Equal), Some(Equal)) => Some(Equal),
+            (Some(Less | Equal), Some(Less | Equal), Some(Less | Equal), Some(Less | Equal)) => {
+                Some(Less)
+            }
+            (
+                Some(Equal | Greater),
+                Some(Equal | Greater),
+                Some(Equal | Greater),
+                Some(Equal | Greater),
+            ) => Some(Greater),
+            _ => None,
+        }
     }
 
-    let res = match job {
-        &Job::Val(val) => val,
-        &Job::Op(op) => match op {
-            Operation::Add(l, r) => yells(l, jobs)? + yells(r, jobs)?,
-            Operation::Sub(l, r) => yells(l, jobs)? - yells(r, jobs)?,
-            Operation::Mul(l, r) => yells(l, jobs)? * yells(r, jobs)?,
-            Operation::Div(l, r) => yells(l, jobs)? / yells(r, jobs)?,
-        },
-    };
-    Some(res)
-}
+    fn lt(&self, other: &Self) -> bool {
+        use core::cmp::Ordering::*;
 
-fn operation(input: &str) -> IResult<&str, Job> {
-    let (input, operand1) = alpha1(input)?;
-    let (input, _) = multispace1(input)?;
-    let (input, binary_op) = alt((tag("+"), tag("-"), tag("/"), tag("*")))(input)?;
-    let (input, _) = multispace1(input)?;
-    let (input, operand2) = alpha1(input)?;
-
-    let operation = match binary_op {
-        "+" => Operation::Add(operand1, operand2),
-        "-" => Operation::Sub(operand1, operand2),
-        "*" => Operation::Mul(operand1, operand2),
-        "/" => Operation::Div(operand1, operand2),
-        c => panic!("Invalid binary operator {c}"),
-    };
-
-    Ok((input, Job::Op(operation)))
-}
-
-fn value(input: &str) -> IResult<&str, Job> {
-    let (input, val) = nom::character::complete::i64(input)?;
-    Ok((input, Job::Val(val)))
-}
-
-fn job(input: &str) -> IResult<&str, Job> {
-    let (input, job) = alt((value, operation))(input)?;
-    Ok((input, job))
-}
-
-fn parse_line(input: &str) -> IResult<&str, (&str, Job)> {
-    let (input, name) = alpha1(input)?;
-    let (input, _) = tag(": ")(input)?;
-    let (input, job) = job(input)?;
-
-    Ok((input, (name, job)))
-}
-
-fn parse(input: &str) -> Result<HashMap<&str, Job>, String> {
-    let (input, monkeys) = match separated_list0(tag("\n"), parse_line)(input) {
-        Ok(monkeys) => monkeys,
-        Err(_) => Err("bla")?,
-    };
-    if !input.is_empty() {
-        Err("Couldn't parse entire input. Residual {input}")?;
+        matches!(self.partial_cmp(other), Some(Less))
     }
-    Ok(monkeys.into_iter().collect())
-}
 
-#[derive(Debug, Copy, Clone)]
-enum Operation<'a> {
-    Add(&'a str, &'a str),
-    Sub(&'a str, &'a str),
-    Mul(&'a str, &'a str),
-    Div(&'a str, &'a str),
-}
+    fn le(&self, other: &Self) -> bool {
+        use core::cmp::Ordering::*;
 
-#[derive(Debug, Copy, Clone)]
-enum Job<'a> {
-    Val(i64),
-    Op(Operation<'a>),
+        matches!(self.partial_cmp(other), Some(Less | Equal))
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        use core::cmp::Ordering::*;
+
+        matches!(self.partial_cmp(other), Some(Greater))
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        use core::cmp::Ordering::*;
+
+        matches!(self.partial_cmp(other), Some(Greater | Equal))
+    }
 }
