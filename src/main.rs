@@ -2,10 +2,9 @@ use std::{
     collections::HashMap,
     error::Error,
     ops::{Add, AddAssign, SubAssign},
-    time::Instant, num::NonZeroUsize,
+    time::Instant,
 };
 
-use lru::LruCache;
 use nom::{
     bytes::complete::tag,
     character::complete::{alpha1, digit1, multispace1},
@@ -25,8 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut robots = Resource::default();
         robots.ore = 1;
         let resources = Resource::default();
-        let cache_size = 2usize.pow(15);
-        let mut cache = LruCache::new(NonZeroUsize::new(cache_size).unwrap());
+        let mut cache = HashMap::new();
         let max_geode = find_most_geodes(bp, robots, resources, minutes, &mut cache);
         dbg!(max_geode);
         dbg!(max_geode.geode as usize * dbg!(i+1));
@@ -45,10 +43,10 @@ fn find_most_geodes(
     robots: Resource,
     resources: Resource,
     minutes: u32,
-    cache: &mut LruCache<(Blueprint, Resource, Resource, u32), Resource>,
+    cache: &mut HashMap<(Blueprint, Resource, Resource, u32), Resource>,
 ) -> Resource {
     let state = (bp, robots, resources, minutes);
-    if cache.contains(&state) {
+    if cache.contains_key(&state) {
         return *cache.get(&state).unwrap();
     }
 
@@ -103,7 +101,7 @@ fn find_most_geodes(
     }
 
     let max_geode = max_geodes.into_iter().max_by_key(|res| res.geode).unwrap();
-    cache.put(state, max_geode);
+    cache.insert(state, max_geode);
     return max_geode;
 }
 
