@@ -18,18 +18,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let input = read();
     let blueprints = parse(&input);
-    let minutes = 24;
+    let minutes = 32;
 
-    let res: u32 = blueprints.into_par_iter().enumerate().map(|(i, bp)| {
-        let mut robots = Resource::default();
-        robots.ore = 1;
-        let resources = Resource::default();
-        let mut cache = HashMap::new();
-        let max_geode = find_most_geodes(bp, robots, resources, minutes, &mut cache);
-        dbg!(max_geode);
-        dbg!(max_geode.geode as usize * dbg!(i+1));
-        max_geode.geode * (i+1) as u32
-    }).sum();
+    let res: u64 = blueprints[0..3]
+        .into_par_iter()
+        .map(|bp| {
+            let mut robots = Resource::default();
+            robots.ore = 1;
+            let resources = Resource::default();
+            let mut cache = HashMap::new();
+            let curr_max = &mut 0;
+            let max_geode = find_most_geodes(*bp, robots, resources, minutes, curr_max, &mut cache);
+            dbg!(max_geode);
+            max_geode as u64
+        })
+        .product();
 
     dbg!(res);
 
@@ -42,54 +45,87 @@ fn find_most_geodes(
     bp: Blueprint,
     robots: Resource,
     resources: Resource,
-    minutes: u32,
-    cache: &mut HashMap<(Blueprint, Resource, Resource, u32), Resource>,
-) -> Resource {
+    minutes: u16,
+    curr_max: &mut u16,
+    cache: &mut HashMap<(Blueprint, Resource, Resource, u16), u16>,
+) -> u16 {
+    // Branch cannot surpass current best solution.
+    let m = robots.geode;
+    let n = robots.geode + (minutes);
+    let possible_max = (m..n).sum::<u16>() + resources.geode;
+    if possible_max < *curr_max {
+        return 0;
+    }
+
+    // Cache
     let state = (bp, robots, resources, minutes);
     if cache.contains_key(&state) {
         return *cache.get(&state).unwrap();
     }
 
+    // Base case
     if minutes <= 0 {
-        return resources;
+        return resources.geode;
     }
 
-    let mut max_geodes = [Resource::default(); 5];
+    let mut max_geodes = [0; 5];
 
-    if bp.ore_robot <= resources {
-        let mut resources = resources;
-        let mut robots = robots;
-        resources -= bp.ore_robot;
-        resources += robots;
-        robots.ore += 1;
-        max_geodes[0] += find_most_geodes(bp, robots, resources, minutes - 1, cache);
-    }
-
-    if bp.clay_robot <= resources {
-        let mut res = resources;
-        let mut rob = robots;
-        res -= bp.clay_robot;
-        res += rob;
-        rob.clay += 1;
-        max_geodes[1] += find_most_geodes(bp, rob, res, minutes - 1, cache);
-    }
-
-    if bp.obsidian_robot <= resources {
-        let mut resources = resources;
-        let mut robots = robots;
-        resources -= bp.obsidian_robot;
-        resources += robots;
-        robots.obsidian += 1;
-        max_geodes[2] += find_most_geodes(bp, robots, resources, minutes - 1, cache);
-    }
-
+    // Buy geode robot.
     if bp.geode_robot <= resources {
         let mut resources = resources;
         let mut robots = robots;
         resources -= bp.geode_robot;
         resources += robots;
         robots.geode += 1;
-        max_geodes[3] += find_most_geodes(bp, robots, resources, minutes - 1, cache);
+        max_geodes[3] += find_most_geodes(bp, robots, resources, minutes - 1, curr_max, cache);
+    }
+
+    // Buy obsidian robot.
+    let max_obsidian_robots = bp
+        .ore_robot
+        .obsidian
+        .max(bp.clay_robot.obsidian)
+        .max(bp.obsidian_robot.obsidian)
+        .max(bp.geode_robot.obsidian);
+    if bp.obsidian_robot <= resources && robots.obsidian < max_obsidian_robots {
+        let mut resources = resources;
+        let mut robots = robots;
+        resources -= bp.obsidian_robot;
+        resources += robots;
+        robots.obsidian += 1;
+        max_geodes[2] += find_most_geodes(bp, robots, resources, minutes - 1, curr_max, cache);
+    }
+
+    // Buy clay robot.
+    let max_clay_robots = bp
+        .ore_robot
+        .clay
+        .max(bp.clay_robot.clay)
+        .max(bp.obsidian_robot.clay)
+        .max(bp.geode_robot.clay);
+    if bp.clay_robot <= resources && robots.clay < max_clay_robots {
+        let mut res = resources;
+        let mut rob = robots;
+        res -= bp.clay_robot;
+        res += rob;
+        rob.clay += 1;
+        max_geodes[1] += find_most_geodes(bp, rob, res, minutes - 1, curr_max, cache);
+    }
+
+    // Buy ore robot.
+    let max_ore_robots = bp
+        .ore_robot
+        .ore
+        .max(bp.clay_robot.ore)
+        .max(bp.obsidian_robot.ore)
+        .max(bp.geode_robot.ore);
+    if bp.ore_robot <= resources && robots.ore < max_ore_robots {
+        let mut resources = resources;
+        let mut robots = robots;
+        resources -= bp.ore_robot;
+        resources += robots;
+        robots.ore += 1;
+        max_geodes[0] += find_most_geodes(bp, robots, resources, minutes - 1, curr_max, cache);
     }
 
     // Don't buy a robot.
@@ -97,16 +133,19 @@ fn find_most_geodes(
         let mut resources = resources;
         let robots = robots;
         resources += robots;
-        max_geodes[4] += find_most_geodes(bp, robots, resources, minutes - 1, cache);
+        max_geodes[4] += find_most_geodes(bp, robots, resources, minutes - 1, curr_max, cache);
     }
 
-    let max_geode = max_geodes.into_iter().max_by_key(|res| res.geode).unwrap();
+    let max_geode = max_geodes.into_iter().max().unwrap();
     cache.insert(state, max_geode);
+    if max_geode > *curr_max {
+        *curr_max = max_geode;
+    }
     return max_geode;
 }
 
-fn parse_resource(input: &str) -> IResult<&str, (&str, u32)> {
-    let (input, amount) = nom::character::complete::u32(input)?;
+fn parse_resource(input: &str) -> IResult<&str, (&str, u16)> {
+    let (input, amount) = nom::character::complete::u16(input)?;
     let (input, _) = tag(" ")(input)?;
     let (input, name) = alpha1(input)?;
     Ok((input, (name, amount)))
@@ -117,7 +156,7 @@ fn parse_cost(input: &str) -> IResult<&str, Resource> {
     let (input, _) = separated_list1(multispace1, alpha1)(input)?;
     let (input, _) = multispace1(input)?;
     let (input, resources) = separated_list1(tag(" and "), parse_resource)(input)?;
-    let resources: HashMap<&str, u32> = resources.into_iter().collect();
+    let resources: HashMap<&str, u16> = resources.into_iter().collect();
     let (input, _) = tag(".")(input)?;
 
     let resource = Resource {
@@ -161,10 +200,10 @@ fn read() -> String {
 
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
 struct Resource {
-    ore: u32,
-    clay: u32,
-    obsidian: u32,
-    geode: u32,
+    ore: u16,
+    clay: u16,
+    obsidian: u16,
+    geode: u16,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
