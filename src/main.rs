@@ -1,6 +1,5 @@
 use std::{error::Error, time::Instant};
 
-use itertools::Itertools;
 use nom::{
     branch::alt, bytes::complete::tag, character::complete::line_ending, multi::separated_list1,
     sequence::separated_pair, IResult,
@@ -15,8 +14,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut cpu = Cpu::from(instructions);
     cpu.x = 1;
-    let total = cpu.run();
-    dbg!(total);
+    cpu.run();
 
     let runtime = start.elapsed();
     dbg!(runtime);
@@ -80,21 +78,21 @@ impl From<Vec<Instruction>> for Cpu {
 }
 
 impl Cpu {
-    fn run(&mut self) -> i32 {
+    fn run(&mut self) {
         use CpuState::*;
 
         self.counter = 0;
         let mut iter = self.instructions.iter();
 
         let cycles: Vec<_> = (20..=220).step_by(40).collect();
-        let mut total = 0;
 
         while self.state != Finished {
             self.counter += 1;
 
+
+
             if cycles.contains(&self.counter) {
-                total += self.counter as i32 * self.x;
-                println!("{} {} {:?}", self.counter, self.x, self.state);
+                // println!("{} {} {:?}", self.counter, self.x, self.state);
             }
 
             let new_state = match self.state {
@@ -110,9 +108,15 @@ impl Cpu {
                 Finished => Finished,
             };
 
+            let counter = self.counter as i32;
+            if [self.x -1, self.x, self.x+1].contains(&counter) {
+                print!("#");
+            } else {
+                print!(".");
+            }
+
             self.state = new_state;
         }
 
-        total
     }
 }
