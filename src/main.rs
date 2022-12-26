@@ -1,13 +1,15 @@
-use std::{error::Error, time::Instant};
+use std::{cell::RefCell, error::Error, rc::Rc, time::Instant};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let input = read();
-    let dec_total: u64 = input.lines().map(|line| snafu_to_dec(line)).sum();
-    dbg!(dec_total);
-    let snafu_total = dec_to_snafu(dec_total);
-    dbg!(snafu_total);
+    let mut fs = parse_input(&input);
+    fs.print();
+    let dir_sizes = fs.gather_dir_sizes();
+    let small_dirs = dir_sizes.iter().filter(|(_, size)| *size <= 100_000);
+    let total = small_dirs.map(|(_, size)| size).sum::<u32>();
+    dbg!(total);
 
     let runtime = start.elapsed();
     dbg!(runtime);
@@ -18,71 +20,151 @@ fn read() -> String {
     std::fs::read_to_string("input.txt").expect("File not found.")
 }
 
-fn snafu_to_dec(snafu: &str) -> u64 {
-    let mut total: i64 = 0;
-    let radix: i64 = 5; 
-    for (i, c) in snafu.chars().rev().enumerate() {
-        total += radix.pow(i as u32) * match c {
-            a @ ('0' | '1' | '2') => a.to_digit(radix as u32).unwrap() as i64,
-            '=' => -2,
-            '-' => -1,
-            x => panic!("Didn't expect {x}."),
-        }
-    }
-
-    total as u64
-}
-
-fn dec_to_snafu(dec: u64) -> String {
-    let quinten = format_radix(dec, 5);
-    dbg!(&quinten);
-
-    let mut snafu = String::new();
-    let mut carry = 0;
-    for mut c in quinten.chars().rev() {
-        let mut tmp_c = c.to_digit(5).unwrap();
-        if carry != 0 {
-            tmp_c += carry;
-            carry = 0;
-        }
-        if tmp_c > 4 {
-            carry += 1;
-            tmp_c %= 5;
-        }
-        c = (tmp_c).to_string().chars().next().unwrap();
-        let new_c = match c {
-            a @ ('0' | '1' | '2') => a,
-            '3' => {
-                carry += 1;
-                '='
+fn parse_input(input: &str) -> FileSystem {
+    let root = Rc::new(RefCell::new(Directory::new("/")));
+    let mut current_dir = Rc::clone(&root);
+    let mut iter = input.lines().peekable();
+    iter.next().unwrap();
+    while let Some(line) = iter.next() {
+        if line.starts_with("$ cd ..") {
+            let parent = Rc::clone(&current_dir.borrow().parent.as_ref().unwrap());
+            current_dir = parent;
+        } else if line.starts_with("$ cd ") {
+            let name = &line[5..];
+            let mut new_dir = Directory::new(name);
+            new_dir.parent = Some(Rc::clone(&current_dir));
+            let new_dir = Rc::new(RefCell::new(new_dir));
+            current_dir.borrow_mut().dirs.push(Rc::clone(&new_dir));
+            current_dir = new_dir;
+        } else if line.starts_with("$ ls") {
+            while let Some(next_line) = iter.peek() {
+                if next_line.starts_with("$") {
+                    break;
+                } else if next_line.starts_with("dir") {
+                    iter.next().unwrap();
+                } else {
+                    let line = iter.next().unwrap();
+                    let (size, name) = line.split_once(' ').unwrap();
+                    let size: u32 = size.parse().unwrap();
+                    current_dir.borrow_mut().files.push(File::new(name, size));
+                }
             }
-            '4' => {
-                carry += 1;
-                '-'
-            }
-            x => panic!("Didn't expect {x}"),
-        };
-        snafu.push(new_c);
-    }
-
-    if carry != 0 {
-        snafu.push('1');
-    }
-    snafu.chars().rev().collect()
-}
-
-fn format_radix(mut x: u64, radix: u64) -> String {
-    let mut result = vec![];
-
-    loop {
-        let m = x % radix;
-        x = x / radix;
-
-        // will panic if you use a bad radix (< 2 or > 36).
-        result.push(char::from_digit(m as u32, radix as u32).unwrap());
-        if x == 0 {
-            break;
         }
     }
-    result.into_iter().rev().collect()
+
+    FileSystem {
+        root: Rc::clone(&root),
+    }
 }
+
+#[derive(Debug)]
+struct File {
+    name: String,
+    size: u32,
+}
+
+impl File {
+    fn new(name: &str, size: u32) -> Self {
+        File {
+            name: name.to_owned(),
+            size,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Directory {
+    name: String,
+    parent: Option<Rc<RefCell<Directory>>>,
+    dirs: Vec<Rc<RefCell<Directory>>>,
+    files: Vec<File>,
+    size: Option<u32>,
+}
+
+impl Directory {
+    fn new(name: &str) -> Self {
+        Directory {
+            name: name.to_owned(),
+            parent: None,
+            dirs: vec![],
+            files: vec![],
+            size: None,
+        }
+    }
+
+    fn print(&self, depth: usize) {
+        println!("{:>pad$}- {:} (dir)", "", self.name, pad = 2 * depth);
+        for dir in &self.dirs {
+            dir.borrow().print(depth + 1);
+        }
+        for file in &self.files {
+            println!(
+                "{:>pad$}- {:} (file, size={})",
+                "",
+                file.name,
+                file.size,
+                pad = 2 * (depth + 1),
+            );
+        }
+    }
+
+    fn size(&mut self) -> u32 {
+        if let Some(size) = self.size {
+            return size;
+        }
+        let mut size = self.files.iter().map(|file| file.size).sum();
+        size += self
+            .dirs
+            .iter()
+            .map(|dir| dir.borrow_mut().size())
+            .sum::<u32>();
+        self.size = Some(size);
+        size
+    }
+
+    fn append_dir(&mut self, dirs: &mut Vec<(String, u32)>) {
+        dirs.push((self.name.clone(), self.size()));
+        for dir in self.dirs.iter_mut() {
+            dir.borrow_mut().append_dir(dirs);
+        }
+    }
+}
+
+struct FileSystem {
+    root: Rc<RefCell<Directory>>,
+}
+
+impl FileSystem {
+    fn print(&self) {
+        self.root.borrow().print(0);
+    }
+
+    fn gather_dir_sizes(&mut self) -> Vec<(String, u32)> {
+        let mut dirs = vec![];
+        self.root.borrow_mut().append_dir(&mut dirs);
+
+        dirs
+    }
+
+    // fn iter_dirs(&self) -> DirIter {
+    //     DirIter { curr_dir: Rc::clone(&self.root) }
+    // }
+}
+
+// struct DirIter {
+//     curr_dir: Rc<RefCell<Directory>>,
+// }
+
+// impl Iterator for DirIter {
+//     type Item = Rc<RefCell<Directory>>;
+
+//     fn next(&mut self) -> Option<Self::Item> {
+//         let dir = self.curr_dir.borrow();
+//         let iter = dir.dirs.iter();
+//         while let Some(dir) = iter.next() {
+
+//         }
+//         todo!()
+//     }
+
+// }
