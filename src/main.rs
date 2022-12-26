@@ -6,10 +6,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let input = read();
     let mut fs = parse_input(&input);
     fs.print();
+
+    let total_space = 70_000_000;
+    let update_size = 30_000_000;
+
+    let available_space = total_space - fs.disk_usage();
+    let need_to_free = update_size - available_space;
+
     let dir_sizes = fs.gather_dir_sizes();
-    let small_dirs = dir_sizes.iter().filter(|(_, size)| *size <= 100_000);
-    let total = small_dirs.map(|(_, size)| size).sum::<u32>();
-    dbg!(total);
+    let small_dirs = dir_sizes.iter().filter(|(_, size)| *size >= need_to_free);
+    let smallest_possible_dir = small_dirs.map(|(_, size)| size).min().unwrap();
+    dbg!(smallest_possible_dir);
 
     let runtime = start.elapsed();
     dbg!(runtime);
@@ -27,10 +34,9 @@ fn parse_input(input: &str) -> FileSystem {
     iter.next().unwrap();
     while let Some(line) = iter.next() {
         if line.starts_with("$ cd ..") {
-            let parent = Rc::clone(&current_dir.borrow().parent.as_ref().unwrap());
+            let parent = Rc::clone(current_dir.borrow().parent.as_ref().unwrap());
             current_dir = parent;
-        } else if line.starts_with("$ cd ") {
-            let name = &line[5..];
+        } else if let Some(name) = line.strip_prefix("$ cd ") {
             let mut new_dir = Directory::new(name);
             new_dir.parent = Some(Rc::clone(&current_dir));
             let new_dir = Rc::new(RefCell::new(new_dir));
@@ -38,7 +44,7 @@ fn parse_input(input: &str) -> FileSystem {
             current_dir = new_dir;
         } else if line.starts_with("$ ls") {
             while let Some(next_line) = iter.peek() {
-                if next_line.starts_with("$") {
+                if next_line.starts_with('$') {
                     break;
                 } else if next_line.starts_with("dir") {
                     iter.next().unwrap();
@@ -139,32 +145,14 @@ impl FileSystem {
         self.root.borrow().print(0);
     }
 
+    fn disk_usage(&mut self) -> u32 {
+        self.root.borrow_mut().size()
+    }
+
     fn gather_dir_sizes(&mut self) -> Vec<(String, u32)> {
         let mut dirs = vec![];
         self.root.borrow_mut().append_dir(&mut dirs);
 
         dirs
     }
-
-    // fn iter_dirs(&self) -> DirIter {
-    //     DirIter { curr_dir: Rc::clone(&self.root) }
-    // }
 }
-
-// struct DirIter {
-//     curr_dir: Rc<RefCell<Directory>>,
-// }
-
-// impl Iterator for DirIter {
-//     type Item = Rc<RefCell<Directory>>;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         let dir = self.curr_dir.borrow();
-//         let iter = dir.dirs.iter();
-//         while let Some(dir) = iter.next() {
-
-//         }
-//         todo!()
-//     }
-
-// }
